@@ -1,7 +1,15 @@
-use std::{borrow::Borrow, cell::RefCell, collections::HashMap, fmt::Display, ops::{Deref, DerefMut}, rc::Rc};
+use std::{
+    borrow::Borrow,
+    cell::RefCell,
+    collections::HashMap,
+    fmt::Display,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+};
 
 use crate::{
     parser::parse_tecs_file,
+    parser::parse_tecs_string,
     tecs_file::{Clause, Expr, File, Message, Pattern, Rule, ScopeId, TermExpr, Value, ValueBox},
 };
 use aterms::Term;
@@ -94,6 +102,7 @@ fn print_args(store: &Store, args: Vec<ValueBox>) -> String {
         Some(first) => {
             res += RefCell::borrow(first).to_string(store).as_str();
             for val in iter {
+                res += ", ";
                 res += RefCell::borrow(val).to_string(store).as_str();
             }
         }
@@ -122,19 +131,31 @@ impl Interpreter {
         }
     }
 
+    pub fn new_from_string(tecs_file: &str) -> Self {
+        let f: File = parse_tecs_string(tecs_file).unwrap();
+        Self {
+            ters: match &f.import {
+                Some(name) => Some(Rewriter::new_with_prelude(
+                    parse_rewrite_file(name.as_str()).expect("File not found"),
+                )),
+                None => None,
+            },
+            file: f,
+        }
+    }
+
     fn get_rule(&self, name: &str) -> Option<&Rule> {
         self.file.rules.iter().find(|r| r.name == name)
     }
 
-    pub fn run(&self, term: Term, rule_name: &str) -> Result<(), RuleFailure> {
+    pub fn run(&self, term: Term, rule_name: &str) -> Result<Term, RuleFailure> {
         if let Some(rule) = self.get_rule(rule_name) {
             let mut store = Store::default();
             let rc = ValueBox::from(RefCell::from(Value::from(term)));
-            let res = self.try_rule(&mut store, rule, vec![rc.clone()]);
-
-            println!("{}", RefCell::borrow(&rc).deref().into_aterm(&store));
-
-            res
+            match self.try_rule(&mut store, rule, vec![rc.clone()]) {
+                Err(e) => Err(e),
+                Ok(()) => Ok(RefCell::borrow(&rc).deref().into_aterm(&store)),
+            }
         } else {
             Err(RuleFailure::from_message(String::from(
                 "No rule with given name",
@@ -296,13 +317,13 @@ impl Interpreter {
             Clause::ScopeEdge(l, r) => {
                 let left_result =
                     self.interp_expr(env, store, l)
-                        .or(Err(ClauseFailure::from_error_string(
-                            "Failed to scope edge lhs",
+                        .or_else(|_| Err(ClauseFailure::from_error_string(
+                            format!("Failed to compute scope edge lhs: {:?}", l).as_str(),
                         )))?;
                 let right_result =
                     self.interp_expr(env, store, r)
                         .or(Err(ClauseFailure::from_error_string(
-                            "Failed to scope edge rhs",
+                            "Failed to compute scope edge rhs",
                         )))?;
                 let x = match (
                     (*left_result).borrow().deref(),
@@ -335,7 +356,15 @@ impl Interpreter {
                                 env.bindings.extend(bindings);
                                 Ok(())
                             }
-                            _ => Err(ClauseFailure::from_error_string("Scope query failed")),
+                            _ => Err(ClauseFailure::from_error_string(
+                                format!(
+                                    "Scope query on scope {} for {} failed\n{}",
+                                    left_id,
+                                    r.expand_to_string(store, env),
+                                    store.scope_graph.to_string(store)
+                                )
+                                .as_str(),
+                            )),
                         }
                     }
                     _ => Err(ClauseFailure::from_error_string(
@@ -434,7 +463,13 @@ impl Interpreter {
                     )))?,
             ) {
                 (a, b) if a == b => Ok(()),
-                _ => Err(ClauseFailure::from_error_string("Not equal")),
+                (a, b) => {
+                    let lhs_string = RefCell::borrow(&a).deref().to_string(store);
+                    let rhs_string = RefCell::borrow(&b).deref().to_string(store);
+                    Err(ClauseFailure::from_error_string(
+                        format!("Equality not satisfied: {} = {}", lhs_string, rhs_string).as_str(),
+                    ))
+                }
             },
             Clause::WithMessage(inner_clause, message) => {
                 match self.try_clause(env, store, inner_clause) {
@@ -453,10 +488,14 @@ impl Interpreter {
                 match env.get(&var) {
                     Some(v) => {
                         RefCell::borrow_mut(&v).deref_mut().add_attribute(value);
-                    },
-                    None => return Err(ClauseFailure::from_error_string(format!("Undefined reference {}", var).as_str())),
+                    }
+                    None => {
+                        return Err(ClauseFailure::from_error_string(
+                            format!("Undefined reference {}", var).as_str(),
+                        ))
+                    }
                 };
-                
+
                 Ok(())
             }
         }
@@ -561,6 +600,29 @@ impl ScopeGraph {
 
         None
     }
+
+    fn to_string(&self, store: &Store) -> String {
+        let mut res = String::new();
+
+        for edge in &self.edges {
+            for neighbour in edge.1 {
+                res += format!("{} -> {}\n", edge.0, neighbour).as_str();
+            }
+        }
+
+        for value_edge in &self.scope_values {
+            for value in value_edge.1 {
+                res += format!(
+                    "{} -> {}\n",
+                    value_edge.0,
+                    RefCell::borrow(value).deref().to_string(store)
+                )
+                .as_str();
+            }
+        }
+
+        res
+    }
 }
 
 #[derive(Debug, Default)]
@@ -641,5 +703,20 @@ impl<'a> Environment<'a> {
                 None => None,
             },
         }
+    }
+
+    fn to_string(&self, store: &Store) -> String {
+        let mut res = String::new();
+
+        for (name, value) in &self.bindings {
+            res += format!(
+                "{} -> {}\n",
+                name,
+                RefCell::borrow(value).deref().to_string(store)
+            )
+            .as_str();
+        }
+
+        res
     }
 }

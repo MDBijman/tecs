@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, cell::RefCell, fmt::Display, ops::Deref, rc::Rc};
 
-use crate::interpreter::{Store, StoreBox};
+use crate::interpreter::{Store, StoreBox, Environment};
 
 #[derive(Debug)]
 pub enum Type {
@@ -425,4 +425,98 @@ pub enum Pattern {
     Variable(String),
     String(String),
     Bind(String, Box<Pattern>),
+}
+
+impl Pattern {
+    pub fn expand_to_string(&self, store: &Store, env: &Environment) -> String {
+        let mut res = String::new();
+        match self {
+            Pattern::Term(con, subpatterns) => {
+                res += format!("{}(", con).as_str();
+                let mut iter = subpatterns.iter();
+                match iter.next() {
+                    Some(first) => {
+                        res += format!("{}", first.expand_to_string(store, env)).as_str();
+                        for subterm in iter {
+                            res += format!(", ").as_str();
+                            res += format!("{}", subterm.expand_to_string(store, env)).as_str();
+                        }
+                    }
+                    None => {}
+                }
+                res += format!(")").as_str();
+            }
+            Pattern::Tuple(subpatterns) => {
+                res += format!("(").as_str();
+                let mut iter = subpatterns.iter();
+                match iter.next() {
+                    Some(first) => {
+                        res += format!("{}", first.expand_to_string(store, env)).as_str();
+                        for subterm in iter {
+                            res += format!(", ").as_str();
+                            res += format!("{}", subterm.expand_to_string(store, env)).as_str();
+                        }
+                    }
+                    None => {}
+                }
+                res += format!(")").as_str();
+            }
+            Pattern::Variable(v) => {
+                if let Some(value) = env.get(v) {
+                    let borrowed_value = RefCell::borrow(&value);
+                    res += (*borrowed_value).to_string(store).as_str();
+                } else {
+                    res += format!("{}", v).as_str();
+                }
+            }
+            Pattern::String(s) => {
+                res += format!("\"{}\"", s).as_str();
+            }
+            Pattern::Bind(v, expr) => {
+                res += format!("{}@{}", v, expr.expand_to_string(store, env)).as_str();
+            }
+        }
+        res
+    }
+}
+
+impl Display for Pattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Pattern::Term(con, subterms) => {
+                write!(f, "{}(", con)?;
+                let mut iter = subterms.iter();
+                match iter.next() {
+                    Some(first) => {
+                        write!(f, "{}", first)?;
+                        for subterm in iter {
+                            write!(f, ", ")?;
+                            write!(f, "{}", subterm)?;
+                        }
+                    }
+                    None => {}
+                }
+                write!(f, ")")?;
+            }
+            Pattern::Tuple(subterms) => {
+                write!(f, "(")?;
+                let mut iter = subterms.iter();
+                match iter.next() {
+                    Some(first) => {
+                        write!(f, "{}", first)?;
+                        for subterm in iter {
+                            write!(f, ", ")?;
+                            write!(f, "{}", subterm)?;
+                        }
+                    }
+                    None => {}
+                }
+                write!(f, ")")?;
+            }
+            Pattern::Variable(v) => write!(f, "{}", v)?,
+            Pattern::String(s) => write!(f, "\"{}\"", s)?,
+            Pattern::Bind(con, inner) => write!(f, "{}@{}", con, inner)?,
+        }
+        Ok(())
+    }
 }

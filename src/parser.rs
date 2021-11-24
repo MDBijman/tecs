@@ -96,7 +96,7 @@ fn parse_recursive_term_expression(i: &str) -> ParseResult<Expr> {
             ws(parse_name),
             delimited(
                 ws(char('(')),
-                ws(separated_list0(ws(tag(",")), cut(parse_expression))),
+                ws(separated_list0(ws(tag(",")), parse_expression)),
                 ws(char(')')),
             ),
         )),
