@@ -1,0 +1,8 @@
+typeof_type: FnType(i, o) -> FunctionType(!typeof_type i, !typeof_type o);
+typeof_type: TypeHeapArray(inner) -> HeapArrayType(!typeof_type inner);
+typeof_type: TypeId(name) -> Ref(name);
+
+extract_pattern_types: ([p], t) -> .extract_pattern_types (p, t);
+extract_pattern_types: (PatternVar(n), Type(t)) -> [(n, Type(t))];
+extract_pattern_types: (PatternNum(_), _) -> [];
+extract_pattern_types: (PatternStr(_), _) -> [];

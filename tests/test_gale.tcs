@@ -1,0 +1,44 @@
+import "tests/test_gale.rw".
+
+FileOk: File -> fact
+FileOk File(module, decls) :- 
+    file_scope := new scope,
+    forall (ToplevelDeclsOk file_scope) decls,
+    forall (ToplevelDefsOk file_scope) decls.
+
+DeclareBuiltins: scope -> fact
+DeclareBuiltins scope :-
+    scope -> Function("std:parse_ui64", Type(Func(Builtin("str"), Builtin("ui64")))).
+
+ToplevelDeclsOk: scope -> FnDecl -> fact
+ToplevelDeclsOk file_scope FnDecl(name, type) :-
+    type_type := !typeof_type type,
+    not (file_scope -?> Function(name, type))
+        | error "Duplicate function with name and type",
+    file_scope -> Function(name, Type(type_type)).
+ToplevelDeclsOk file_scope o.
+
+ToplevelDefsOk: scope -> FnDef -> fact
+ToplevelDefsOk file_scope FnDef(name, pat, expr) :-
+    file_scope -?> Function(name, t) | error "Definition before declaration",
+    function_scope := new scope,    
+    function_scope -> file_scope,
+    mapping := !extract_pattern_types (pat, t),
+    forall (Declare function_scope) mapping,
+    ExprOk function_scope expr.
+ToplevelDefsOk file_scope o.
+
+Declare: scope -> (Name, Type) -> fact
+Declare s (name, type) :- s -> Decl(name, type).
+
+ExprOk: scope -> Expr -> fact
+ExprOk function_scope r@Ref(n) :-
+    function_scope -?> Decl(n, type) | error "Undefined reference",
+    r += type.
+
+ExprOk function_scope Add(l, r) :-
+    ExprOk function_scope l,
+    ExprOk function_scope r,
+    lt := !type l,
+    rt := !type r,
+    lt = rt.

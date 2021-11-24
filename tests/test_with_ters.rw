@@ -1,0 +1,2 @@
+type_to_string: Int() -> "int";
+type_to_string: String() -> "string";

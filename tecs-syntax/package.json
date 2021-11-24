@@ -1,0 +1,27 @@
+{
+    "name": "tecs-syntax",
+    "displayName": "tecs-syntax",
+    "description": "Syntax highlighting for Tecs files",
+    "version": "0.0.1",
+    "engines": {
+        "vscode": "^1.46.0"
+    },
+    "publisher": "mbijman",
+    "repository": {"url": "github.com/MDBijman/tecs"},
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [{
+            "id": "tecs",
+            "aliases": ["Tecs", "tecs"],
+            "extensions": [".tcs"],
+            "configuration": "./language-configuration.json"
+        }],
+        "grammars": [{
+            "language": "tecs",
+            "scopeName": "source.tecs",
+            "path": "./syntaxes/tecs.tmLanguage.json"
+        }]
+    }
+}

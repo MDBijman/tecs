@@ -1,0 +1,18 @@
+import "tests/test_with_ters.rw".
+
+FileOk: File -> fact
+FileOk File(a, b) :-
+    s := new scope,
+    decl s a,
+    ref s b.
+
+decl: scope -> Decl -> fact
+decl s Decl(n, t) :-
+    type := !type_to_string t,
+    s -> Decl(n, type).
+
+ref: scope -> Ref -> fact
+ref s Ref(n, t) :-
+    type := !type_to_string t,
+    s -?> Decl(n, type).
+

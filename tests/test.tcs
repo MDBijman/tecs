@@ -1,0 +1,62 @@
+FileOk_1: File -> fact
+FileOk_1 File().
+
+FileOk_2: File -> fact
+FileOk_2 File(a, b) :- true.
+
+FileOk_3: File -> fact
+FileOk_3 File() :-
+    s1 := new scope,
+    s2 := new scope,
+    s1 -> s2,
+    true.
+
+FileOk_4: File -> fact
+FileOk_4 File() :-
+    s1 := new scope,
+    s2 := new scope,
+    s1 -> s2,
+    s2 -> Decl("x"),
+    s1 -?> Decl(n),
+    true.
+
+FileOk_5: File -> fact
+FileOk_5 File(a, b) :-
+    s := new scope,
+    decl_5 a s,
+    ref_5 b s,
+    true.
+
+decl_5: Decl -> scope -> fact
+decl_5 Decl(n) s :- s -> Decl(n). 
+
+ref_5: Ref -> scope -> fact
+ref_5 Ref(n) s :- s -?> Decl(n). 
+
+FileOk_6: File -> fact
+FileOk_6 File(a, b) :-
+    s := new scope,
+    decl_6 s a,
+    forall (ref_6 s) b,
+    true.
+
+decl_6: scope -> Decl -> fact
+decl_6 s Decl(n) :- s -> Decl(n). 
+
+ref_6: scope -> Ref -> fact
+ref_6 s Ref(n) :- s -?> Decl(n). 
+
+FileOk_7: File -> fact
+FileOk_7 File(a, b) :-
+    s := new scope,
+    decl_7 s a,
+    decl_7 s b.
+
+decl_7: scope -> Decl -> fact
+decl_7 s Decl(n) :- not (s -?> Decl(n)), s -> Decl(n).
+
+FileOk_8: File -> fact
+FileOk_8 File(a, b) :-
+    s := new scope,
+    a = b.
+

@@ -1,0 +1,118 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "Tecs",
+	"patterns": [
+		{
+			"include": "#rule_declaration"
+		},
+		{
+			"include": "#rule_definition"
+		}
+	],
+	"repository": {
+		"rule_declaration": {
+			"begin": "(\\w+):",
+			"end": "$",
+			"beginCaptures": {
+				"1": {
+					"name": "entity.name.function.tecs"
+				}
+			},
+			"patterns": [
+				{
+					"include": "#keywords"
+				},
+				{
+					"include": "#strings"
+				},
+				{
+					"include": "#tokens"
+				},
+				{
+					"include": "#terms"
+				}
+			]
+		},
+		"rule_definition": {
+			"begin": "(\\w+)[^:]",
+			"end": "\\.",
+			"beginCaptures": {
+				"1": {
+					"name": "entity.name.function.tecs"
+				}
+			},
+			"patterns": [
+				{
+					"include": "#keywords"
+				},
+				{
+					"include": "#strings"
+				},
+				{
+					"include": "#tokens"
+				},
+				{
+					"include": "#terms"
+				},
+				{
+					"include": "#variables"
+				},
+				{
+					"include": "#ters_rules"
+				}
+			]
+		},
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.tecs",
+					"match": "\\b(error|forall|scope|new|where|true|false|fact|not)\\b"
+				}
+			]
+		},
+		"strings": {
+			"name": "string.quoted.double.tecs",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.tecs",
+					"match": "\\\\."
+				}
+			]
+		},
+		"tokens": {
+			"patterns": [
+				{
+					"name": "keyword.operator.tecs",
+					"match": "(->|=|:=|=>|\\\\|-\\?>|\\+=)"
+				}
+			]
+		},
+		"terms": {
+			"patterns": [
+				{
+					"name": "support.constant",
+					"match": "[A-Z]\\w+"
+				}
+			]
+		},
+		"variables": {
+			"patterns": [
+				{
+					"name": "variable",
+					"match": "\\w+"
+				}
+			]
+		},
+		"ters_rules": {
+			"patterns": [
+				{
+					"name": "entity.name.function",
+					"match": "!\\w+"
+				}
+			]
+		}
+	},
+	"scopeName": "source.tecs"
+}
