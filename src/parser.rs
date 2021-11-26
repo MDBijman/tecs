@@ -1,8 +1,5 @@
 extern crate nom;
 use crate::tecs_file::*;
-use aterms::parse_string;
-use aterms::string_literal;
-use aterms::Term;
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
@@ -116,7 +113,7 @@ fn parse_tuple_term_expression(i: &str) -> ParseResult<Expr> {
 }
 
 fn parse_string_term(i: &str) -> ParseResult<Expr> {
-    map(parse_string, |s| Expr::TermLiteral(s))(i)
+    map(aterms::parse_string_term, |s| Expr::TermLiteral(s))(i)
 }
 
 fn parse_array_term_expression(i: &str) -> ParseResult<Expr> {
@@ -244,10 +241,10 @@ fn parse_clause(i: &str) -> ParseResult<Clause> {
 
 fn parse_message(i: &str) -> ParseResult<Message> {
     alt((
-        map(preceded(ws(tag("error")), cut(string_literal)), |s| {
+        map(preceded(ws(tag("error")), cut(aterms::parse_string_literal)), |s| {
             Message::Error(s)
         }),
-        map(preceded(ws(tag("warning")), cut(string_literal)), |s| {
+        map(preceded(ws(tag("warning")), cut(aterms::parse_string_literal)), |s| {
             Message::Warning(s)
         }),
     ))(i)
@@ -290,14 +287,31 @@ fn parse_pattern(i: &str) -> ParseResult<Pattern> {
             |(n, ps)| Pattern::Term(n, ps),
         ),
         map(
+            context(
+                "array pattern",
+                tuple((
+                    ws_after(char('[')),
+                    opt(pair(
+                        parse_pattern,
+                        opt(preceded(ws(char('|')), cut(parse_pattern))),
+                    )),
+                    cut(ws(char(']'))),
+                )),
+            ),
+            |(_, patterns, _)| match patterns {
+                Some((head, Some(tail_pattern))) => {
+                    Pattern::ListCons(Box::from(head), Box::from(tail_pattern))
+                }
+                Some((head, None)) => Pattern::List(vec![head]),
+                None => Pattern::List(vec![]),
+            },
+        ),
+        map(
             tuple((ws(parse_name), ws(char('@')), parse_pattern)),
             |(name, _, inner)| Pattern::Bind(name, Box::from(inner)),
         ),
         map(ws(parse_name), |n| Pattern::Variable(n)),
-        map(ws(parse_string), |s| match s {
-            Term::STerm(s, _) => Pattern::String(s.value),
-            _ => panic!(),
-        }),
+        map(ws(aterms::parse_string_literal), |s| Pattern::String(s)),
         map(
             delimited(
                 ws_after(char('(')),
@@ -313,11 +327,12 @@ fn parse_type_atom(i: &str) -> ParseResult<Type> {
     alt((
         map(ws(tag("scope")), |_| Type::Scope),
         map(ws(tag("fact")), |_| Type::Fact),
-        map(ws(parse_name), |_| Type::Term),
+        map(ws(tag("term")), |_| Type::Term),
+        map(ws(tag("edge")), |_| Type::Term),
     ))(i)
 }
 
-fn parse_composite_type(i: &str) -> ParseResult<Type> {
+fn parse_tuple_type(i: &str) -> ParseResult<Type> {
     alt((
         map(
             delimited(
@@ -329,6 +344,22 @@ fn parse_composite_type(i: &str) -> ParseResult<Type> {
         ),
         parse_type_atom,
     ))(i)
+}
+
+fn parse_composite_type(i: &str) -> ParseResult<Type> {
+    map(
+        context(
+            "type",
+            pair(
+                parse_tuple_type,
+                opt(preceded(ws(char('*')), cut(parse_composite_type))),
+            ),
+        ),
+        |(a, b)| match b {
+            Some(t) => Type::Rule(Box::from(a), Box::from(t)),
+            None => a,
+        },
+    )(i)
 }
 
 fn parse_type(i: &str) -> ParseResult<Type> {
@@ -364,11 +395,14 @@ fn parse_rule_variant(i: &str) -> ParseResult<RuleVariant> {
             tuple((
                 ws(parse_name),
                 many1(parse_pattern),
+                opt(preceded(ws(char('=')), parse_expression)),
                 opt(preceded(ws(tag(":-")), cut(parse_conjunction))),
                 cut(ws(char('.'))),
             )),
         ),
-        |(name, patterns, clause, _)| RuleVariant::new(name, patterns, clause),
+        |(name, patterns, result, clause, _)| {
+            RuleVariant::new_with_result(name, patterns, result, clause)
+        },
     )(i)
 }
 
@@ -388,7 +422,7 @@ fn parse_rule(i: &str) -> ParseResult<Rule> {
 }
 
 fn parse_import(i: &str) -> ParseResult<String> {
-    delimited(ws(tag("import")), string_literal, ws(char('.')))(i)
+    delimited(ws(tag("import")), aterms::parse_string_literal, ws(char('.')))(i)
 }
 
 pub fn parse_tecs_string(i: &str) -> Result<File, String> {

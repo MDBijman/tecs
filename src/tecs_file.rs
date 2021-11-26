@@ -1,6 +1,6 @@
-use std::{borrow::Borrow, cell::RefCell, fmt::Display, ops::Deref, rc::Rc};
+use std::{cell::RefCell, fmt::Display, ops::Deref, rc::Rc};
 
-use crate::interpreter::{Store, StoreBox, Environment};
+use crate::interpreter::{Environment, Store};
 
 #[derive(Debug)]
 pub enum Type {
@@ -30,74 +30,64 @@ pub type ValueBox = Rc<RefCell<Value>>;
 impl From<aterms::Term> for Value {
     fn from(t: aterms::Term) -> Self {
         match t {
-            aterms::Term::RTerm(rterm, annot) => {
-                assert!(annot.elems.is_empty());
-                Self::RTerm(
-                    rterm.constructor,
-                    rterm
-                        .terms
-                        .into_iter()
-                        .map(|t| Value::from(t).into())
-                        .collect(),
-                    annot
-                        .elems
-                        .into_iter()
-                        .map(|t| Value::from(t).into())
-                        .collect(),
-                )
-            }
-            aterms::Term::STerm(sterm, annot) => {
-                assert!(annot.elems.is_empty());
-                Self::STerm(
-                    sterm.value,
-                    annot
-                        .elems
-                        .into_iter()
-                        .map(|t| Value::from(t).into())
-                        .collect(),
-                )
-            }
-            aterms::Term::NTerm(nterm, annot) => {
-                assert!(annot.elems.is_empty());
-                Self::NTerm(
-                    nterm.value,
-                    annot
-                        .elems
-                        .into_iter()
-                        .map(|t| Value::from(t).into())
-                        .collect(),
-                )
-            }
-            aterms::Term::TTerm(tterm, annot) => {
-                assert!(annot.elems.is_empty());
-                Self::TTerm(
-                    tterm
-                        .terms
-                        .into_iter()
-                        .map(|t| Value::from(t).into())
-                        .collect(),
-                    annot
-                        .elems
-                        .into_iter()
-                        .map(|t| Value::from(t).into())
-                        .collect(),
-                )
-            }
-            aterms::Term::LTerm(lterm, annot) => {
-                assert!(annot.elems.is_empty());
-                Self::LTerm(
-                    lterm
-                        .terms
-                        .into_iter()
-                        .map(|t| Value::from(t).into())
-                        .collect(),
-                    annot
-                        .elems
-                        .into_iter()
-                        .map(|t| Value::from(t).into())
-                        .collect(),
-                )
-            }
+            aterms::Term::RTerm(rterm) => Self::RTerm(
+                rterm.constructor,
+                rterm
+                    .terms
+                    .into_iter()
+                    .map(|t| Value::from(t).into())
+                    .collect(),
+                rterm
+                    .annotations
+                    .elems
+                    .into_iter()
+                    .map(|t| Value::from(t).into())
+                    .collect(),
+            ),
+            aterms::Term::STerm(sterm) => Self::STerm(
+                sterm.value,
+                sterm
+                    .annotations
+                    .elems
+                    .into_iter()
+                    .map(|t| Value::from(t).into())
+                    .collect(),
+            ),
+            aterms::Term::NTerm(nterm) => Self::NTerm(
+                nterm.value,
+                nterm
+                    .annotations
+                    .elems
+                    .into_iter()
+                    .map(|t| Value::from(t).into())
+                    .collect(),
+            ),
+            aterms::Term::TTerm(tterm) => Self::TTerm(
+                tterm
+                    .terms
+                    .into_iter()
+                    .map(|t| Value::from(t).into())
+                    .collect(),
+                tterm
+                    .annotations
+                    .elems
+                    .into_iter()
+                    .map(|t| Value::from(t).into())
+                    .collect(),
+            ),
+            aterms::Term::LTerm(lterm) => Self::LTerm(
+                lterm
+                    .terms
+                    .into_iter()
+                    .map(|t| Value::from(t).into())
+                    .collect(),
+                lterm
+                    .annotations
+                    .elems
+                    .into_iter()
+                    .map(|t| Value::from(t).into())
+                    .collect(),
+            ),
         }
     }
 }
@@ -357,6 +347,7 @@ impl Rule {
 pub struct RuleVariant {
     pub name: String,
     pub patterns: Vec<Pattern>,
+    pub result: Option<Expr>,
     pub clause: Option<Clause>,
 }
 
@@ -365,6 +356,21 @@ impl RuleVariant {
         Self {
             name,
             patterns,
+            result: None,
+            clause,
+        }
+    }
+
+    pub fn new_with_result(
+        name: String,
+        patterns: Vec<Pattern>,
+        result: Option<Expr>,
+        clause: Option<Clause>,
+    ) -> Self {
+        Self {
+            name,
+            patterns,
+            result,
             clause,
         }
     }
@@ -422,6 +428,8 @@ impl Display for Message {
 pub enum Pattern {
     Term(String, Vec<Pattern>),
     Tuple(Vec<Pattern>),
+    ListCons(Box<Pattern>, Box<Pattern>),
+    List(Vec<Pattern>),
     Variable(String),
     String(String),
     Bind(String, Box<Pattern>),
@@ -438,8 +446,7 @@ impl Pattern {
                     Some(first) => {
                         res += format!("{}", first.expand_to_string(store, env)).as_str();
                         for subterm in iter {
-                            res += format!(", ").as_str();
-                            res += format!("{}", subterm.expand_to_string(store, env)).as_str();
+                            res += format!(", {}", subterm.expand_to_string(store, env)).as_str();
                         }
                     }
                     None => {}
@@ -453,8 +460,7 @@ impl Pattern {
                     Some(first) => {
                         res += format!("{}", first.expand_to_string(store, env)).as_str();
                         for subterm in iter {
-                            res += format!(", ").as_str();
-                            res += format!("{}", subterm.expand_to_string(store, env)).as_str();
+                            res += format!(", {}", subterm.expand_to_string(store, env)).as_str();
                         }
                     }
                     None => {}
@@ -475,6 +481,28 @@ impl Pattern {
             Pattern::Bind(v, expr) => {
                 res += format!("{}@{}", v, expr.expand_to_string(store, env)).as_str();
             }
+            Pattern::ListCons(head, tail) => {
+                res += format!(
+                    "[{}|{}]",
+                    head.expand_to_string(store, env),
+                    tail.expand_to_string(store, env)
+                )
+                .as_str();
+            }
+            Pattern::List(subpatterns) => {
+                res += format!("[").as_str();
+                let mut iter = subpatterns.iter();
+                match iter.next() {
+                    Some(first) => {
+                        res += format!("{}", first.expand_to_string(store, env)).as_str();
+                        for subterm in iter {
+                            res += format!(", {}", subterm.expand_to_string(store, env)).as_str();
+                        }
+                    }
+                    None => {}
+                }
+                res += format!("]").as_str();
+            }
         }
         res
     }
@@ -490,8 +518,7 @@ impl Display for Pattern {
                     Some(first) => {
                         write!(f, "{}", first)?;
                         for subterm in iter {
-                            write!(f, ", ")?;
-                            write!(f, "{}", subterm)?;
+                            write!(f, ", {}", subterm)?;
                         }
                     }
                     None => {}
@@ -505,8 +532,7 @@ impl Display for Pattern {
                     Some(first) => {
                         write!(f, "{}", first)?;
                         for subterm in iter {
-                            write!(f, ", ")?;
-                            write!(f, "{}", subterm)?;
+                            write!(f, ", {}", subterm)?;
                         }
                     }
                     None => {}
@@ -516,6 +542,21 @@ impl Display for Pattern {
             Pattern::Variable(v) => write!(f, "{}", v)?,
             Pattern::String(s) => write!(f, "\"{}\"", s)?,
             Pattern::Bind(con, inner) => write!(f, "{}@{}", con, inner)?,
+            Pattern::ListCons(head, tail) => write!(f, "[{}|{}]", head, tail)?,
+            Pattern::List(subpatterns) => {
+                write!(f, "[")?;
+                let mut iter = subpatterns.iter();
+                match iter.next() {
+                    Some(first) => {
+                        write!(f, "{}", first)?;
+                        for subterm in iter {
+                            write!(f, ", {}", subterm)?;
+                        }
+                    }
+                    None => {}
+                }
+                write!(f, "]")?;
+            }
         }
         Ok(())
     }

@@ -282,6 +282,42 @@ impl Interpreter {
                     None => None,
                 }
             }
+            Pattern::ListCons(head_pattern, tail_pattern) => match value.deref() {
+                Value::LTerm(terms, _) => {
+                    let mut iter = terms.iter();
+                    let head = iter.next()?;
+                    let mut head_match =
+                        Interpreter::try_pattern(env, store, head_pattern, head.clone())?;
+                    let tail_match = Interpreter::try_pattern(
+                        env,
+                        store,
+                        tail_pattern,
+                        Value::LTerm(iter.map(|v| v.clone()).collect(), vec![]).into(),
+                    )?;
+                    head_match.extend(tail_match);
+                    Some(head_match)
+                }
+                _ => None,
+            },
+            Pattern::List(subpatterns) => match value.deref() {
+                Value::LTerm(terms, _) => {
+                    if terms.len() != subpatterns.len() {
+                        None
+                    } else {
+                        let mut bindings = HashMap::<String, ValueBox>::new();
+                        for (subterm, subpattern) in terms.iter().zip(subpatterns.iter()) {
+                            bindings.extend(Interpreter::try_pattern(
+                                env,
+                                store,
+                                subpattern,
+                                subterm.clone(),
+                            )?);
+                        }
+                        Some(bindings)
+                    }
+                }
+                _ => None,
+            },
         }
     }
 
@@ -315,11 +351,11 @@ impl Interpreter {
                     ))
                 }),
             Clause::ScopeEdge(l, r) => {
-                let left_result =
-                    self.interp_expr(env, store, l)
-                        .or_else(|_| Err(ClauseFailure::from_error_string(
-                            format!("Failed to compute scope edge lhs: {:?}", l).as_str(),
-                        )))?;
+                let left_result = self.interp_expr(env, store, l).or_else(|_| {
+                    Err(ClauseFailure::from_error_string(
+                        format!("Failed to compute scope edge lhs: {:?}", l).as_str(),
+                    ))
+                })?;
                 let right_result =
                     self.interp_expr(env, store, r)
                         .or(Err(ClauseFailure::from_error_string(

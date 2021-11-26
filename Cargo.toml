@@ -8,12 +8,13 @@ edition = "2018"
 [dependencies]
 clap = "2.33.3"
 nom = "6.0.0"
-aterms = { git="https://github.com/MDBijman/ters" }
+aterms = { git="https://github.com/MDBijman/aterms" }
 ters = { git="https://github.com/MDBijman/ters" }
 
+[patch.'https://github.com/MDBijman/aterms']
+aterms = { path = "../aterms", version="0.1.0" }
 [patch.'https://github.com/MDBijman/ters']
-aterms = { path = "../ters/aterms", version="0.1.0" }
-ters = { path = "../ters/ters", version="0.1.0" }
+ters = { path = "../ters", version="0.1.0" }
 
 [lib]
 name = "tecs"
