@@ -27,10 +27,10 @@ pub enum Value {
 
 pub type ValueBox = Rc<RefCell<Value>>;
 
-impl From<aterms::Term> for Value {
-    fn from(t: aterms::Term) -> Self {
+impl From<aterms::base::Term> for Value {
+    fn from(t: aterms::base::Term) -> Self {
         match t {
-            aterms::Term::RTerm(rterm) => Self::RTerm(
+            aterms::base::Term::RTerm(rterm) => Self::RTerm(
                 rterm.constructor,
                 rterm
                     .terms
@@ -44,7 +44,7 @@ impl From<aterms::Term> for Value {
                     .map(|t| Value::from(t).into())
                     .collect(),
             ),
-            aterms::Term::STerm(sterm) => Self::STerm(
+            aterms::base::Term::STerm(sterm) => Self::STerm(
                 sterm.value,
                 sterm
                     .annotations
@@ -53,7 +53,7 @@ impl From<aterms::Term> for Value {
                     .map(|t| Value::from(t).into())
                     .collect(),
             ),
-            aterms::Term::NTerm(nterm) => Self::NTerm(
+            aterms::base::Term::NTerm(nterm) => Self::NTerm(
                 nterm.value,
                 nterm
                     .annotations
@@ -62,7 +62,7 @@ impl From<aterms::Term> for Value {
                     .map(|t| Value::from(t).into())
                     .collect(),
             ),
-            aterms::Term::TTerm(tterm) => Self::TTerm(
+            aterms::base::Term::TTerm(tterm) => Self::TTerm(
                 tterm
                     .terms
                     .into_iter()
@@ -75,7 +75,7 @@ impl From<aterms::Term> for Value {
                     .map(|t| Value::from(t).into())
                     .collect(),
             ),
-            aterms::Term::LTerm(lterm) => Self::LTerm(
+            aterms::base::Term::LTerm(lterm) => Self::LTerm(
                 lterm
                     .terms
                     .into_iter()
@@ -119,8 +119,8 @@ impl Value {
         }
     }
 
-    pub fn into_aterm(&self, store: &Store) -> aterms::Term {
-        use aterms::Term;
+    pub fn into_aterm(&self, store: &Store) -> aterms::base::Term {
+        use aterms::base::Term;
         match self {
             Value::Scope(s) => Term::new_rec_term("Scope", vec![Term::new_number_term(*s as f64)]),
             Value::True => Term::new_rec_term("True", vec![]),
@@ -131,44 +131,44 @@ impl Value {
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
                     .collect(),
-                annots
+                aterms::base::Annotations::from(annots
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
-                    .collect(),
+                    .collect()),
             ),
             Value::LTerm(subterms, annots) => Term::new_anot_list_term(
                 subterms
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
                     .collect(),
-                annots
+                aterms::base::Annotations::from(annots
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
-                    .collect(),
+                    .collect()),
             ),
             Value::TTerm(subterms, annots) => Term::new_anot_tuple_term(
                 subterms
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
                     .collect(),
-                annots
+                aterms::base::Annotations::from(annots
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
-                    .collect(),
+                    .collect()),
             ),
             Value::STerm(s, annots) => Term::new_anot_string_term(
                 s.as_str(),
-                annots
+                aterms::base::Annotations::from(annots
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
-                    .collect(),
+                    .collect()),
             ),
             Value::NTerm(n, annots) => Term::new_anot_number_term(
                 *n,
-                annots
+                aterms::base::Annotations::from(annots
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
-                    .collect(),
+                    .collect()),
             ),
         }
     }
@@ -382,7 +382,7 @@ pub enum Expr {
     True,
     False,
     Term(TermExpr),
-    TermLiteral(aterms::Term),
+    TermLiteral(aterms::base::Term),
     Ref(String),
     InvokeTers(String, Box<Expr>),
 }

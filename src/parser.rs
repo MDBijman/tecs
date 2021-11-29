@@ -1,5 +1,9 @@
 extern crate nom;
 use crate::tecs_file::*;
+use aterms::extensible::{
+    parse_list_term_no_annotations, parse_recursive_term_no_annotations,
+    parse_string_term_no_annotations, parse_tuple_term_no_annotations,
+};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
@@ -87,52 +91,16 @@ fn parse_fact_value(i: &str) -> ParseResult<Expr> {
     ))(i)
 }
 
-fn parse_recursive_term_expression(i: &str) -> ParseResult<Expr> {
-    map(
-        tuple((
-            ws(parse_name),
-            delimited(
-                ws(char('(')),
-                ws(separated_list0(ws(tag(",")), parse_expression)),
-                ws(char(')')),
-            ),
-        )),
-        |(con, args)| Expr::Term(TermExpr::RTerm(con, args)),
-    )(i)
-}
-
-fn parse_tuple_term_expression(i: &str) -> ParseResult<Expr> {
-    map(
-        delimited(
-            ws(char('(')),
-            ws(separated_list0(ws(tag(",")), parse_expression)),
-            cut(ws(char(')'))),
-        ),
-        |args| Expr::Term(TermExpr::TTerm(args)),
-    )(i)
-}
-
-fn parse_string_term(i: &str) -> ParseResult<Expr> {
-    map(aterms::parse_string_term, |s| Expr::TermLiteral(s))(i)
-}
-
-fn parse_array_term_expression(i: &str) -> ParseResult<Expr> {
-    map(
-        delimited(
-            ws(char('[')),
-            ws(separated_list0(ws(tag(",")), parse_expression)),
-            cut(ws(char(']'))),
-        ),
-        |args| Expr::Term(TermExpr::LTerm(args)),
-    )(i)
-}
-
 fn parse_term(i: &str) -> ParseResult<Expr> {
     alt((
-        parse_string_term,
-        parse_array_term_expression,
-        parse_recursive_term_expression,
-        parse_tuple_term_expression,
+        parse_string_term_no_annotations(|s| {
+            Expr::TermLiteral(aterms::base::Term::new_string_term(&s))
+        }),
+        parse_list_term_no_annotations(parse_expression, |args| Expr::Term(TermExpr::LTerm(args))),
+        parse_recursive_term_no_annotations(parse_name, parse_expression, |con, args| {
+            Expr::Term(TermExpr::RTerm(con, args))
+        }),
+        parse_tuple_term_no_annotations(parse_expression, |args| Expr::Term(TermExpr::TTerm(args))),
     ))(i)
 }
 
@@ -241,12 +209,17 @@ fn parse_clause(i: &str) -> ParseResult<Clause> {
 
 fn parse_message(i: &str) -> ParseResult<Message> {
     alt((
-        map(preceded(ws(tag("error")), cut(aterms::parse_string_literal)), |s| {
-            Message::Error(s)
-        }),
-        map(preceded(ws(tag("warning")), cut(aterms::parse_string_literal)), |s| {
-            Message::Warning(s)
-        }),
+        map(
+            preceded(ws(tag("error")), cut(aterms::shared::parse_string_literal)),
+            |s| Message::Error(s),
+        ),
+        map(
+            preceded(
+                ws(tag("warning")),
+                cut(aterms::shared::parse_string_literal),
+            ),
+            |s| Message::Warning(s),
+        ),
     ))(i)
 }
 
@@ -311,7 +284,9 @@ fn parse_pattern(i: &str) -> ParseResult<Pattern> {
             |(name, _, inner)| Pattern::Bind(name, Box::from(inner)),
         ),
         map(ws(parse_name), |n| Pattern::Variable(n)),
-        map(ws(aterms::parse_string_literal), |s| Pattern::String(s)),
+        map(ws(aterms::shared::parse_string_literal), |s| {
+            Pattern::String(s)
+        }),
         map(
             delimited(
                 ws_after(char('(')),
@@ -422,7 +397,11 @@ fn parse_rule(i: &str) -> ParseResult<Rule> {
 }
 
 fn parse_import(i: &str) -> ParseResult<String> {
-    delimited(ws(tag("import")), aterms::parse_string_literal, ws(char('.')))(i)
+    delimited(
+        ws(tag("import")),
+        aterms::shared::parse_string_literal,
+        ws(char('.')),
+    )(i)
 }
 
 pub fn parse_tecs_string(i: &str) -> Result<File, String> {

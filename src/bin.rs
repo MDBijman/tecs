@@ -2,7 +2,7 @@ mod parser;
 mod tecs_file;
 mod interpreter;
 
-use aterms::parse_term_from_file;
+use aterms::base::parse_term_from_file;
 use clap::{App, Arg};
 use interpreter::Interpreter;
 

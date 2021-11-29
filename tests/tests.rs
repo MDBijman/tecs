@@ -1,4 +1,4 @@
-use aterms::{parse_term_from_file, parse_term_from_string};
+use aterms::base::{parse_term_from_file, parse_term_from_string};
 use tecs::{parse_tecs_file, Interpreter};
 
 #[test]

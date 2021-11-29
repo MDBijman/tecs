@@ -1,10 +1,8 @@
 use std::{
-    borrow::Borrow,
     cell::RefCell,
     collections::HashMap,
     fmt::Display,
     ops::{Deref, DerefMut},
-    rc::Rc,
 };
 
 use crate::{
@@ -12,7 +10,7 @@ use crate::{
     parser::parse_tecs_string,
     tecs_file::{Clause, Expr, File, Message, Pattern, Rule, ScopeId, TermExpr, Value, ValueBox},
 };
-use aterms::Term;
+use aterms::base::Term;
 use ters::{parse_rewrite_file, Rewriter};
 
 #[derive(Debug, Default)]
