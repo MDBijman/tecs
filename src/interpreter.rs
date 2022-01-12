@@ -40,6 +40,12 @@ impl ClauseFailure {
     pub fn extend_with(&mut self, message: Message) {
         self.messages.push(message);
     }
+
+    pub fn extend_with_clause_failure(&mut self, other: ClauseFailure) {
+        for message in other.messages {
+            self.messages.push(message);
+        }
+    }
 }
 
 impl Display for ClauseFailure {
@@ -326,12 +332,28 @@ impl Interpreter {
         clause: &Clause,
     ) -> Result<(), ClauseFailure> {
         match clause {
-            Clause::Conjunction(clauses) => {
+            Clause::All(clauses) => {
                 for clause in clauses {
                     self.try_clause(env, store, clause)?;
                 }
 
                 Ok(())
+            }
+            Clause::Any(clauses) => {
+                let mut failure_res =
+                    ClauseFailure::from_error_string("None of the clauses succeeded");
+
+                for clause in clauses {
+                    match self.try_clause(env, store, clause) {
+                        Ok(()) => return Ok(()),
+                        Err(cf) => {
+                            failure_res.extend_with_clause_failure(cf);
+                            continue;
+                        }
+                    }
+                }
+
+                Err(failure_res)
             }
             Clause::Let(name, expr) => {
                 let v = self.interp_expr(env, store, expr).or(Err(
@@ -377,12 +399,45 @@ impl Interpreter {
                 };
                 x
             }
+            Clause::LabeledScopeEdge(l, annot, r) => {
+                let left_result = self.interp_expr(env, store, l).or_else(|_| {
+                    Err(ClauseFailure::from_error_string(
+                        format!("Failed to compute scope edge lhs: {:?}", l).as_str(),
+                    ))
+                })?;
+                let label_result = self.interp_expr(env, store, annot).or(Err(
+                    ClauseFailure::from_error_string("Failed to compute scope label"),
+                ))?;
+                let right_result =
+                    self.interp_expr(env, store, r)
+                        .or(Err(ClauseFailure::from_error_string(
+                            "Failed to compute scope edge rhs",
+                        )))?;
+                let x = match (
+                    (*left_result).borrow().deref(),
+                    (*label_result).borrow().deref(),
+                    (*right_result).borrow().deref(),
+                ) {
+                    (Value::Scope(left_id), Value::STerm(s, _), Value::Scope(right_id)) => {
+                        store.make_labeled_edge(*left_id, s.clone(), *right_id);
+                        Ok(())
+                    }
+                    (Value::Scope(_), _, _) => Err(ClauseFailure::from_error_string(
+                        "Cannot create scope edge to declaration with label",
+                    )),
+                    _ => Err(ClauseFailure::from_error_string(
+                        "Failed to create scope edge",
+                    )),
+                };
+                x
+            }
             Clause::ScopeQuery(l, r) => {
                 let left_result =
                     self.interp_expr(env, store, l)
                         .or(Err(ClauseFailure::from_error_string(
                             "Failed to compute expression",
                         )))?;
+
                 let x = match (*left_result).borrow().deref() {
                     Value::Scope(left_id) => {
                         match store.query_scope_graph(env, store, *left_id, r) {
@@ -395,6 +450,60 @@ impl Interpreter {
                                     "Scope query on scope {} for {} failed\n{}",
                                     left_id,
                                     r.expand_to_string(store, env),
+                                    store.scope_graph.to_string(store)
+                                )
+                                .as_str(),
+                            )),
+                        }
+                    }
+                    _ => Err(ClauseFailure::from_error_string(
+                        "Scope query must have scope as left-hand side",
+                    )),
+                };
+                x
+            }
+            Clause::AnnotScopeQuery(l, stack, r) => {
+                let left_result =
+                    self.interp_expr(env, store, l)
+                        .or(Err(ClauseFailure::from_error_string(
+                            "Failed to compute expression",
+                        )))?;
+
+                let stack_result = self.interp_expr(env, store, stack).or(Err(
+                    ClauseFailure::from_error_string("Failed to compute expression"),
+                ))?;
+
+                let mut edge_labels = Vec::new();
+                match stack_result.borrow().deref() {
+                    Value::LTerm(elems, _) => {
+                        for elem in elems.iter().rev() {
+                            match elem.borrow().deref() {
+                                Value::STerm(s, _) => edge_labels.push(s.clone()),
+                                _ => {
+                                    return Err(ClauseFailure::from_error_string(
+                                        format!("Only strings are allowed as edge labels",)
+                                            .as_str(),
+                                    ))
+                                }
+                            }
+                        }
+                    }
+                    _ => todo!(),
+                };
+
+                let x = match (*left_result).borrow().deref() {
+                    Value::Scope(left_id) => {
+                        match store.annotated_query_scope_graph(env, store, *left_id, r, edge_labels) {
+                            Some((_, bindings)) => {
+                                env.bindings.extend(bindings);
+                                Ok(())
+                            }
+                            _ => Err(ClauseFailure::from_error_string(
+                                format!(
+                                    "Annotated scope query on scope {} for {} with annotations {:?} failed\n{}",
+                                    left_id,
+                                    r.expand_to_string(store, env),
+                                    stack_result.borrow().deref(),
                                     store.scope_graph.to_string(store)
                                 )
                                 .as_str(),
@@ -505,15 +614,27 @@ impl Interpreter {
                     ))
                 }
             },
-            Clause::WithMessage(inner_clause, message) => {
-                match self.try_clause(env, store, inner_clause) {
-                    Ok(()) => Ok(()),
-                    Err(mut f) => Err({
-                        f.extend_with(message.clone());
-                        f
-                    }),
+            Clause::WithMessage(inner_clause, message) => match message {
+                Message::Error(_) | Message::Warning(_) => {
+                    match self.try_clause(env, store, inner_clause) {
+                        Ok(()) => Ok(()),
+                        Err(mut f) => Err({
+                            f.extend_with(message.clone());
+                            f
+                        }),
+                    }
                 }
-            }
+                Message::Debug(d) => {
+                    let res = self.try_clause(env, store, inner_clause);
+                    match self.interp_expr(env, store, d) {
+                        Ok(debug_res) => {
+                            println!("{}", debug_res.deref().borrow().to_string(store))
+                        }
+                        Err(err) => println!("{}", err),
+                    }
+                    res
+                }
+            },
             Clause::AddAttr(var, expr) => {
                 let value = self.interp_expr(env, store, expr).or(Err(
                     ClauseFailure::from_error_string("Failed to compute expression"),
@@ -553,13 +674,16 @@ impl Interpreter {
             Expr::InvokeTers(name, arg) => {
                 let arg_value = self.interp_expr(env, store, arg)?;
                 let ters_arg: Term = RefCell::borrow(&arg_value).into_aterm(store);
-                let t = self
+                match self
                     .ters
                     .as_ref()
                     .expect("Invoking Ters rule without imports")
                     .clone()
-                    .rewrite_with_rule(ters_arg, name.as_str());
-                Ok(Value::from(t).into())
+                    .rewrite_with_rule(ters_arg, name.as_str())
+                {
+                    Ok(res) => Ok(Value::from(res).into()),
+                    Err(message) => Err(message),
+                }
             }
             Expr::Term(TermExpr::RTerm(con, subexpressions)) => {
                 let mut computed_subterms = Vec::new();
@@ -605,6 +729,7 @@ impl Interpreter {
 pub struct ScopeGraph {
     scopes: Vec<ScopeId>,
     edges: HashMap<ScopeId, Vec<ScopeId>>,
+    edge_labels: HashMap<(ScopeId, ScopeId), String>,
     scope_values: HashMap<ScopeId, Vec<ValueBox>>,
     next_scope: ScopeId,
 }
@@ -629,6 +754,50 @@ impl ScopeGraph {
         for neighbour in self.edges.get(&scope)? {
             if let Some(value) = self.query(env, store, *neighbour, r) {
                 return Some(value);
+            }
+        }
+
+        None
+    }
+
+    fn query_annotated(
+        &self,
+        env: &Environment,
+        store: &Store,
+        scope: ScopeId,
+        r: &Pattern,
+        label_stack: Vec<&String>,
+    ) -> Option<QueryResult> {
+        // If there are no edge annotations left, we check the current scope
+        if label_stack.len() == 0 {
+            let assoc_values = self.scope_values.get(&scope)?;
+            for value in assoc_values {
+                if let Some(bindings) = Interpreter::try_pattern(env, store, r, value.clone()) {
+                    return Some((value.clone(), bindings));
+                }
+            }
+        }
+
+        // Check edge labels of neighbours
+        for neighbour in self.edges.get(&scope)? {
+            if let Some(edge_label) = self.edge_labels.get(&(scope, *neighbour)) {
+                if let Some(expected_label) = label_stack.last() {
+                    if *expected_label == edge_label {
+                        let mut new_labels = label_stack.clone();
+                        new_labels.pop();
+                        if let Some(res) =
+                            self.query_annotated(env, store, *neighbour, r, new_labels)
+                        {
+                            return Some(res);
+                        }
+                    }
+                }
+            } else {
+                if let Some(value) =
+                    self.query_annotated(env, store, *neighbour, r, label_stack.clone())
+                {
+                    return Some(value);
+                }
             }
         }
 
@@ -678,12 +847,29 @@ impl Store {
         self.scope_graph.edges.entry(from).or_default().push(to);
     }
 
+    pub fn make_labeled_edge(&mut self, from: ScopeId, label: String, to: ScopeId) {
+        self.scope_graph.edges.entry(from).or_default().push(to);
+        self.scope_graph.edge_labels.insert((from, to), label);
+    }
+
     pub fn associate_value(&mut self, scope: ScopeId, v: ValueBox) {
         self.scope_graph
             .scope_values
             .entry(scope)
             .or_default()
             .push(v);
+    }
+
+    fn annotated_query_scope_graph(
+        &self,
+        env: &Environment,
+        store: &Store,
+        left_id: ScopeId,
+        r: &Pattern,
+        v: Vec<String>,
+    ) -> Option<QueryResult> {
+        self.scope_graph
+            .query_annotated(env, store, left_id, r, v.iter().map(|s| s).collect())
     }
 
     fn query_scope_graph(

@@ -131,44 +131,54 @@ impl Value {
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
                     .collect(),
-                aterms::base::Annotations::from(annots
-                    .into_iter()
-                    .map(|t| Value::from(t).into_aterm(store))
-                    .collect()),
+                aterms::base::Annotations::from(
+                    annots
+                        .into_iter()
+                        .map(|t| Value::from(t).into_aterm(store))
+                        .collect(),
+                ),
             ),
             Value::LTerm(subterms, annots) => Term::new_anot_list_term(
                 subterms
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
                     .collect(),
-                aterms::base::Annotations::from(annots
-                    .into_iter()
-                    .map(|t| Value::from(t).into_aterm(store))
-                    .collect()),
+                aterms::base::Annotations::from(
+                    annots
+                        .into_iter()
+                        .map(|t| Value::from(t).into_aterm(store))
+                        .collect(),
+                ),
             ),
             Value::TTerm(subterms, annots) => Term::new_anot_tuple_term(
                 subterms
                     .into_iter()
                     .map(|t| Value::from(t).into_aterm(store))
                     .collect(),
-                aterms::base::Annotations::from(annots
-                    .into_iter()
-                    .map(|t| Value::from(t).into_aterm(store))
-                    .collect()),
+                aterms::base::Annotations::from(
+                    annots
+                        .into_iter()
+                        .map(|t| Value::from(t).into_aterm(store))
+                        .collect(),
+                ),
             ),
             Value::STerm(s, annots) => Term::new_anot_string_term(
                 s.as_str(),
-                aterms::base::Annotations::from(annots
-                    .into_iter()
-                    .map(|t| Value::from(t).into_aterm(store))
-                    .collect()),
+                aterms::base::Annotations::from(
+                    annots
+                        .into_iter()
+                        .map(|t| Value::from(t).into_aterm(store))
+                        .collect(),
+                ),
             ),
             Value::NTerm(n, annots) => Term::new_anot_number_term(
                 *n,
-                aterms::base::Annotations::from(annots
-                    .into_iter()
-                    .map(|t| Value::from(t).into_aterm(store))
-                    .collect()),
+                aterms::base::Annotations::from(
+                    annots
+                        .into_iter()
+                        .map(|t| Value::from(t).into_aterm(store))
+                        .collect(),
+                ),
             ),
         }
     }
@@ -376,7 +386,7 @@ impl RuleVariant {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     MakeScope,
     True,
@@ -387,7 +397,7 @@ pub enum Expr {
     InvokeTers(String, Box<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TermExpr {
     RTerm(String, Vec<Expr>),
     TTerm(Vec<Expr>),
@@ -396,12 +406,15 @@ pub enum TermExpr {
 
 #[derive(Debug)]
 pub enum Clause {
-    Conjunction(Vec<Clause>),
+    All(Vec<Clause>),
+    Any(Vec<Clause>),
     Let(String, Expr),
     AddAttr(String, Expr),
     Expr(Expr),
     ScopeEdge(Expr, Expr),
+    LabeledScopeEdge(Expr, Expr, Expr),
     ScopeQuery(Expr, Pattern),
+    AnnotScopeQuery(Expr, Expr, Pattern),
     Invoke(String, Vec<Expr>),
     ForAll(Box<Clause>, Expr),
     Not(Box<Clause>),
@@ -413,6 +426,7 @@ pub enum Clause {
 pub enum Message {
     Error(String),
     Warning(String),
+    Debug(Expr),
 }
 
 impl Display for Message {
@@ -420,6 +434,7 @@ impl Display for Message {
         match self {
             Message::Error(e) => write!(f, "Error: {}", e),
             Message::Warning(w) => write!(f, "Warning: {}", w),
+            Message::Debug(d) => write!(f, "Debug: {:?}", d),
         }
     }
 }

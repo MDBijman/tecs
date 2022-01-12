@@ -1,0 +1,2 @@
+get_module_path: "std:a" -> ["std"];
+get_var_name: "std:a" -> "a";

@@ -1,0 +1,20 @@
+import "tests/query.rw".
+
+FileOk: term -> fact
+FileOk File(name, ref) :- 
+    file_scope := new scope,
+    ImportStd file_scope,
+    RefOk file_scope ref.
+
+ImportStd: scope -> fact
+ImportStd file_scope :-
+    std_scope := new scope,
+    file_scope -"std"> std_scope,
+    std_scope -> Decl("a", Type(Builtin("ui64"))).
+
+RefOk: scope -> term -> fact
+RefOk function_scope r@Ref(n) :-
+    module_stack := !get_module_path n,
+    simple_name := !get_var_name n,
+    function_scope -module_stack?> Decl(simple_name, type) | error "Undefined reference",
+    r += type.

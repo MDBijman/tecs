@@ -59,6 +59,9 @@
 				},
 				{
 					"include": "#ters_rules"
+				},
+				{
+					"include": "#edges"
 				}
 			]
 		},
@@ -86,6 +89,14 @@
 				{
 					"name": "keyword.operator.tecs",
 					"match": "(->|=|:=|=>|\\\\|-\\?>|\\+=|\\*)"
+				}
+			]
+		},
+		"edges": {
+			"patterns": [
+				{
+					"name": "keyword.operator.tecs",
+					"match": "-(.*?)>"
 				}
 			]
 		},

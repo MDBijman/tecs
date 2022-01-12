@@ -142,17 +142,37 @@ fn parse_attribute_assignment(i: &str) -> ParseResult<Clause> {
 }
 
 fn parse_scope_edge(i: &str) -> ParseResult<Clause> {
-    map(
-        tuple((parse_expression, ws(tag("->")), cut(parse_expression))),
-        |(a, _, b)| Clause::ScopeEdge(a, b),
-    )(i)
+    alt((
+        map(
+            tuple((parse_expression, ws(tag("->")), cut(parse_expression))),
+            |(a, _, b)| Clause::ScopeEdge(a, b),
+        ),
+        map(
+            tuple((
+                parse_expression,
+                delimited(ws(char('-')), parse_expression, ws(char('>'))),
+                cut(parse_expression),
+            )),
+            |(a, e, b)| Clause::LabeledScopeEdge(a, e, b),
+        ),
+    ))(i)
 }
 
 fn parse_scope_query(i: &str) -> ParseResult<Clause> {
-    map(
-        tuple((parse_expression, ws(tag("-?>")), cut(parse_pattern))),
-        |(a, _, b)| Clause::ScopeQuery(a, b),
-    )(i)
+    alt((
+        map(
+            tuple((parse_expression, ws(tag("-?>")), cut(parse_pattern))),
+            |(a, _, b)| Clause::ScopeQuery(a, b),
+        ),
+        map(
+            tuple((
+                parse_expression,
+                delimited(ws(char('-')), parse_expression, ws(tag("?>"))),
+                cut(parse_pattern),
+            )),
+            |(a, e, b)| Clause::AnnotScopeQuery(a, e, b),
+        ),
+    ))(i)
 }
 
 fn parse_rule_invocation(i: &str) -> ParseResult<Clause> {
@@ -193,6 +213,10 @@ fn parse_equality(i: &str) -> ParseResult<Clause> {
     )(i)
 }
 
+fn parse_brackets(i: &str) -> ParseResult<Clause> {
+    map(delimited(ws(char('(')), parse_any_clause, ws(char(')'))), |c| c)(i)
+}
+
 fn parse_clause(i: &str) -> ParseResult<Clause> {
     alt((
         parse_map,
@@ -204,6 +228,7 @@ fn parse_clause(i: &str) -> ParseResult<Clause> {
         parse_scope_query,
         parse_rule_invocation,
         map(parse_expression, |e| Clause::Expr(e)),
+        parse_brackets,
     ))(i)
 }
 
@@ -220,6 +245,9 @@ fn parse_message(i: &str) -> ParseResult<Message> {
             ),
             |s| Message::Warning(s),
         ),
+        map(preceded(ws(tag("debug")), cut(parse_expression)), |s| {
+            Message::Debug(s)
+        }),
     ))(i)
 }
 
@@ -236,12 +264,20 @@ fn parse_clause_message(i: &str) -> ParseResult<Clause> {
     )(i)
 }
 
-fn parse_conjunction(i: &str) -> ParseResult<Clause> {
+fn parse_all_clause(i: &str) -> ParseResult<Clause> {
     map(
         separated_list1(ws(char(',')), cut(parse_clause_message)),
-        |clauses| Clause::Conjunction(clauses),
+        |clauses| Clause::All(clauses),
     )(i)
 }
+
+fn parse_any_clause(i: &str) -> ParseResult<Clause> {
+    map(
+        separated_list1(ws(char(';')), cut(parse_all_clause)),
+        |clauses| Clause::Any(clauses),
+    )(i)
+}
+
 
 fn parse_pattern(i: &str) -> ParseResult<Pattern> {
     alt((
@@ -371,7 +407,7 @@ fn parse_rule_variant(i: &str) -> ParseResult<RuleVariant> {
                 ws(parse_name),
                 many1(parse_pattern),
                 opt(preceded(ws(char('=')), parse_expression)),
-                opt(preceded(ws(tag(":-")), cut(parse_conjunction))),
+                opt(preceded(ws(tag(":-")), cut(parse_any_clause))),
                 cut(ws(char('.'))),
             )),
         ),
